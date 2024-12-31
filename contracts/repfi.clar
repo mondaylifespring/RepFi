@@ -9,6 +9,8 @@
 (define-constant ERR-LOW-CREDIT-SCORE (err u4))
 (define-constant MAX-CREDIT-SCORE u1000)
 (define-constant MIN-CREDIT-SCORE u0)
+(define-constant BASE-INTEREST-RATE u1000) ;; 10% base rate
+(define-constant MAX-ACTIVE-LOANS u3)
 
 ;; Data Variables
 (define-data-var minimum-credit-score uint u500)
@@ -55,6 +57,18 @@
     )
 )
 
+;; Calculate interest rate based on credit score
+(define-private (calculate-interest-rate (credit-score uint))
+    (let (
+        (score-factor (/ (* credit-score u100) MAX-CREDIT-SCORE))
+        (rate-reduction (/ (* score-factor u500) u100)) ;; Up to 5% reduction
+        )
+        (if (>= rate-reduction BASE-INTEREST-RATE)
+            u500 ;; Minimum 5% interest rate
+            (- BASE-INTEREST-RATE rate-reduction))
+    )
+)
+
 ;; Request loan
 (define-public (request-loan (amount uint) (collateral uint))
     (let (
@@ -70,27 +84,72 @@
         (asserts! (>= (* collateral u100) (* amount (var-get collateral-ratio)))
             ERR-INSUFFICIENT-BALANCE)
         
+        ;; Check active loans limit
+        (asserts! (< (get active-loans user-data) MAX-ACTIVE-LOANS)
+            ERR-NOT-AUTHORIZED)
+        
         ;; Create loan
-        (ok (create-loan sender amount collateral))
+        (create-loan sender amount collateral)
     )
 )
 
 ;; Private function to create loan
 (define-private (create-loan (borrower principal) (amount uint) (collateral uint))
-    (let ((loan-id (+ (var-get next-loan-id) u1)))
-        (map-set loans
-            loan-id
-            {
-                borrower: borrower,
-                amount: amount,
-                collateral: collateral,
-                due-date: (+ block-height u1440), ;; Due in ~10 days
-                status: "active",
-                interest-rate: u500 ;; 5% interest rate
-            }
+    (let (
+        (loan-id (+ (var-get next-loan-id) u1))
+        (user-data (unwrap! (map-get? user-profiles borrower) ERR-NOT-AUTHORIZED))
+        (interest-rate (calculate-interest-rate (get credit-score user-data)))
         )
-        (var-set next-loan-id loan-id)
-        loan-id
+        (begin
+            (map-set loans
+                loan-id
+                {
+                    borrower: borrower,
+                    amount: amount,
+                    collateral: collateral,
+                    due-date: (+ block-height u1440), ;; Due in ~10 days
+                    status: "active",
+                    interest-rate: interest-rate
+                }
+            )
+            ;; Update user's active loans count
+            (map-set user-profiles
+                borrower
+                (merge user-data { 
+                    active-loans: (+ (get active-loans user-data) u1),
+                    total-borrowed: (+ (get total-borrowed user-data) amount)
+                })
+            )
+            (var-set next-loan-id loan-id)
+            (ok loan-id)
+        )
+    )
+)
+
+;; Get all active loans for a user
+(define-read-only (get-user-active-loans (user principal))
+    (let (
+        (user-data (unwrap! (map-get? user-profiles user) ERR-NOT-AUTHORIZED))
+        (active-count (get active-loans user-data))
+        )
+        (ok {
+            active-loan-count: active-count,
+            total-borrowed: (get total-borrowed user-data),
+            total-repaid: (get total-repaid user-data)
+        })
+    )
+)
+
+;; Get specific loan status
+(define-read-only (get-loan-status (loan-id uint))
+    (match (map-get? loans loan-id)
+        loan (ok {
+            status: (get status loan),
+            amount: (get amount loan),
+            interest-rate: (get interest-rate loan),
+            due-date: (get due-date loan)
+        })
+        ERR-NOT-AUTHORIZED
     )
 )
 
@@ -99,6 +158,7 @@
     (let (
         (loan (unwrap! (map-get? loans loan-id) ERR-NOT-AUTHORIZED))
         (sender tx-sender)
+        (user-data (unwrap! (map-get? user-profiles sender) ERR-NOT-AUTHORIZED))
         )
         
         ;; Verify sender is borrower
@@ -107,6 +167,13 @@
         ;; Update loan status and user profile
         (begin
             (map-set loans loan-id (merge loan { status: "repaid" }))
+            (map-set user-profiles
+                sender
+                (merge user-data { 
+                    active-loans: (- (get active-loans user-data) u1),
+                    total-repaid: (+ (get total-repaid user-data) (get amount loan))
+                })
+            )
             (unwrap! (update-user-profile sender true) ERR-NOT-AUTHORIZED)
             (ok true)
         )
