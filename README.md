@@ -1,36 +1,60 @@
 # RepFi: Decentralized Identity Lending Protocol
 
-RepFi is a decentralized lending protocol built on the Stacks blockchain that uses on-chain reputation and identity to enable under-collateralized loans. By leveraging blockchain-based credit scoring and the Proof of Transfer (PoX) mechanism, RepFi creates a transparent and efficient lending ecosystem.
+RepFi is a decentralized lending protocol built on the Stacks blockchain that uses on-chain reputation and identity to enable collateralized loans with dynamic interest rates. By leveraging blockchain-based credit scoring, RepFi creates a transparent and efficient lending ecosystem.
 
-## Features
+## Core Features
 
-- **Reputation-Based Lending**: Credit scoring system based on on-chain activity
-- **Smart Contract-Managed Loans**: Automated loan creation, repayment, and liquidation
-- **Dynamic Interest Rates**: Interest rates adjusted based on credit score
-- **Collateral Management**: Flexible collateralization ratios based on credit score
-- **Credit Score Building**: Reward responsible borrowing behavior
+- **Credit Score System**: Users start with a base score of 500, which can increase to 1000 based on repayment history
+- **Dynamic Interest Rates**: Base rate of 10% that decreases based on credit score (minimum 5%)
+- **Smart Collateral Management**: 150% collateralization ratio requirement
+- **Loan Limits**: Maximum of 3 active loans per user
+- **Reputation Building**: +10 points for successful repayments, -50 points for defaults
 
-## Technical Architecture
-
-### Smart Contracts
+## Smart Contract Architecture
 
 The protocol consists of the following main components:
 
-1. **User Profiles Contract**
-   - Manages user credit scores
-   - Tracks borrowing history
-   - Handles reputation updates
+### User Profile Management
+- Credit score tracking (500-1000 range)
+- Active loan counting
+- Total borrowed/repaid amount tracking
+- Automatic profile initialization
 
-2. **Lending Contract**
-   - Processes loan requests
-   - Manages collateral
-   - Handles repayments
-   - Executes liquidations
+### Loan Management
+- Automated loan creation
+- Dynamic interest rate calculation
+- Collateral verification
+- Repayment processing
+- Active loan status tracking
 
-3. **Credit Scoring Contract**
-   - Calculates credit scores
-   - Updates user reputation
-   - Manages score modifiers
+### Key Functions
+
+1. **Profile Management**
+```clarity
+;; Initialize user profile
+(define-public (initialize-profile))
+
+;; Get user profile details
+(define-read-only (get-user-profile (user principal)))
+```
+
+2. **Loan Operations**
+```clarity
+;; Request new loan
+(define-public (request-loan (amount uint) (collateral uint)))
+
+;; Repay existing loan
+(define-public (repay-loan (loan-id uint)))
+
+;; Get loan details
+(define-read-only (get-loan-details (loan-id uint)))
+
+;; Get user's active loans summary
+(define-read-only (get-user-active-loans (user principal)))
+
+;; Get specific loan status
+(define-read-only (get-loan-status (loan-id uint)))
+```
 
 ## Getting Started
 
@@ -53,45 +77,52 @@ cd repfi
 clarinet install
 ```
 
-3. Run tests:
-```bash
-clarinet test
-```
+### Usage Examples
 
-### Contract Deployment
-
-1. Configure your deployment settings in `Clarinet.toml`
-2. Deploy to testnet:
-```bash
-clarinet deploy --testnet
-```
-
-## Usage
-
-### Initialize User Profile
-
+1. Initialize a new user profile:
 ```clarity
 (contract-call? .repfi initialize-profile)
 ```
 
-### Request Loan
-
+2. Request a loan (amount and collateral in microSTX):
 ```clarity
-(contract-call? .repfi request-loan u1000000 u1500000)
+;; Request 1000 STX loan with 1500 STX collateral
+(contract-call? .repfi request-loan u1000000000 u1500000000)
 ```
 
-### Repay Loan
+3. Check your profile:
+```clarity
+(contract-call? .repfi get-user-profile tx-sender)
+```
 
+4. Repay a loan:
 ```clarity
 (contract-call? .repfi repay-loan u1)
 ```
 
-## Security
+5. View active loans:
+```clarity
+(contract-call? .repfi get-user-active-loans tx-sender)
+```
 
-- All smart contracts have been thoroughly tested
-- Implements secure collateral management
-- Includes emergency pause functionality
-- Regular security audits planned
+## Protocol Parameters
+
+- Initial Credit Score: 500
+- Maximum Credit Score: 1000
+- Base Interest Rate: 10%
+- Minimum Interest Rate: 5%
+- Collateral Ratio: 150%
+- Maximum Active Loans: 3
+- Credit Score Increase: +10 per repayment
+- Credit Score Decrease: -50 per default
+
+## Security Considerations
+
+- All functions include proper authorization checks
+- Credit score updates are controlled and bounded
+- Collateral requirements are strictly enforced
+- Active loan limits prevent over-leveraging
+- Status tracking prevents duplicate repayments
 
 ## Contributing
 
@@ -100,4 +131,3 @@ clarinet deploy --testnet
 3. Commit your changes (`git commit -m 'Add some amazing feature'`)
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
-
